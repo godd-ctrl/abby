@@ -72,7 +72,8 @@ export function createAbby<
     config,
     {
       get: (key: string) => {
-        if (typeof window === "undefined") return null;
+        if (typeof window === "undefined" || config.cookies?.disableByDefault)
+          return null;
         return TestStorageService.get(config.projectId, key);
       },
       set: (key: string, value: string, options) => {
