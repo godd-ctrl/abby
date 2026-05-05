@@ -20,6 +20,7 @@ import {
   onUnmounted,
   provide,
   ref,
+  watch,
   type ComputedRef,
   type InjectionKey,
   type PropType,
@@ -82,21 +83,25 @@ export function createAbby<
     },
     {
       get: (key: string) => {
-        if (typeof window === "undefined") return null;
+        if (typeof window === "undefined" || config.cookies?.disableByDefault)
+          return null;
         return FlagStorageService.get(config.projectId, key);
       },
       set: (key: string, value: string) => {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined" || config.cookies?.disableByDefault)
+          return;
         FlagStorageService.set(config.projectId, key, value);
       },
     },
     {
       get: (key: string) => {
-        if (typeof window === "undefined") return null;
+        if (typeof window === "undefined" || config.cookies?.disableByDefault)
+          return null;
         return RemoteConfigStorageService.get(config.projectId, key);
       },
       set: (key: string, value: string) => {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined" || config.cookies?.disableByDefault)
+          return;
         RemoteConfigStorageService.set(config.projectId, key, value);
       },
     }
@@ -148,7 +153,16 @@ export function createAbby<
       }
     );
 
-    notify(name, abby.getTestVariant(name));
+    let lastSentVariant: string | null = null;
+    watch(
+      selectedVariant,
+      (currentVariant) => {
+        if (!currentVariant || currentVariant === lastSentVariant) return;
+        lastSentVariant = currentVariant;
+        notify(name, currentVariant);
+      },
+      { immediate: !hasInjectionContext() }
+    );
 
     const variant = computed(() => {
       const currentVariant = selectedVariant.value;
@@ -277,19 +291,21 @@ export function createAbby<
 
       provide(AbbyDataKey, abbyData);
 
-      const unsubscribe = abby.subscribe((newData) => {
-        abbyData.value = newData as AbbyProjectData;
-      });
+      let unsubscribe: (() => void) | undefined;
 
-      onMounted(() => {
-        if (props.initialData) return;
-        abby.loadProjectData().then((data) => {
+      onMounted(async () => {
+        if (!props.initialData) {
+          const data = await abby.loadProjectData();
           if (data) abbyData.value = data as AbbyProjectData;
+        }
+
+        unsubscribe = abby.subscribe((newData) => {
+          abbyData.value = newData as AbbyProjectData;
         });
       });
 
       onUnmounted(() => {
-        unsubscribe();
+        unsubscribe?.();
       });
 
       return () => slots.default?.();
